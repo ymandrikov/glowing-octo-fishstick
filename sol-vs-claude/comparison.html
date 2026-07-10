@@ -1,0 +1,1089 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SOL vs CLAUDE · ast.ts patch comparison</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --canvas: #0a0b0d;
+      --surface: #111316;
+      --surface-2: #171a1e;
+      --line: #292d33;
+      --line-soft: #20242a;
+      --text: #f1f3f5;
+      --muted: #959ca6;
+      --muted-2: #6e7681;
+      --sol: #d6ff64;
+      --sol-dim: rgba(214, 255, 100, 0.10);
+      --claude: #ff9b73;
+      --claude-dim: rgba(255, 155, 115, 0.10);
+      --fable: #8db7ff;
+      --fable-dim: rgba(141, 183, 255, 0.10);
+      --base: #8fa2b7;
+      --add: #93d899;
+      --add-bg: rgba(66, 145, 76, 0.14);
+      --del: #f09696;
+      --del-bg: rgba(177, 70, 70, 0.14);
+      --mono: "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas, monospace;
+      --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 16% 0%, rgba(214, 255, 100, 0.055), transparent 32rem),
+        radial-gradient(circle at 84% 5%, rgba(255, 155, 115, 0.05), transparent 30rem),
+        var(--canvas);
+      color: var(--text);
+      font-family: var(--sans);
+      line-height: 1.45;
+    }
+
+    button, input { font: inherit; }
+
+    button { color: inherit; }
+
+    .shell {
+      width: min(1560px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 44px 0 72px;
+    }
+
+    .masthead {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 32px;
+      align-items: start;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--sol), var(--claude));
+      content: "";
+      box-shadow: 0 0 18px rgba(214, 255, 100, .45);
+    }
+
+    h1 {
+      max-width: 920px;
+      margin: 0;
+      font-size: clamp(44px, 7vw, 92px);
+      font-weight: 650;
+      letter-spacing: -.065em;
+      line-height: .93;
+    }
+
+    h1 .versus {
+      display: inline-block;
+      margin: 0 .08em;
+      color: var(--muted-2);
+      font-family: Georgia, serif;
+      font-size: .55em;
+      font-style: italic;
+      font-weight: 400;
+      letter-spacing: -.03em;
+      transform: translateY(-.12em);
+    }
+
+    .subtitle {
+      max-width: 710px;
+      margin: 22px 0 0;
+      color: #b5bbc3;
+      font-size: 17px;
+    }
+
+    .file-card {
+      min-width: 290px;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(17, 19, 22, .8);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    .file-card .label {
+      margin-bottom: 7px;
+      color: var(--muted-2);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .file-card .path { color: #d8dde3; }
+
+    .file-card .rule {
+      height: 1px;
+      margin: 13px 0;
+      background: var(--line);
+    }
+
+    .file-card .meta {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+    }
+
+    .section-label {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .section-label::after {
+      height: 1px;
+      flex: 1;
+      background: var(--line-soft);
+      content: "";
+    }
+
+    .scoreboard { padding: 44px 0 20px; }
+
+    .candidate-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .candidate {
+      position: relative;
+      overflow: hidden;
+      min-height: 286px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(145deg, rgba(25, 28, 32, .96), rgba(14, 16, 19, .96));
+    }
+
+    .candidate::before {
+      position: absolute;
+      inset: 0 0 auto;
+      height: 2px;
+      content: "";
+    }
+
+    .candidate.sol::before { background: var(--sol); }
+    .candidate.claude::before { background: var(--claude); }
+
+    .candidate-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      align-items: start;
+    }
+
+    .candidate h2 {
+      margin: 0;
+      font-size: 30px;
+      letter-spacing: -.04em;
+    }
+
+    .candidate.sol h2 { color: var(--sol); }
+    .candidate.claude h2 { color: var(--claude); }
+
+    .complementary-card {
+      display: grid;
+      grid-template-columns: minmax(210px, .55fr) minmax(0, 1.45fr) auto;
+      gap: 28px;
+      align-items: center;
+      margin-top: 16px;
+      padding: 20px 24px;
+      border: 1px solid rgba(141, 183, 255, .22);
+      border-radius: 12px;
+      background: linear-gradient(100deg, var(--fable-dim), rgba(17, 19, 22, .72) 42%);
+    }
+
+    .complementary-name {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .complementary-name h3 {
+      margin: 0;
+      color: var(--fable);
+      font-size: 22px;
+      letter-spacing: -.035em;
+    }
+
+    .complementary-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .mini-metrics {
+      display: flex;
+      gap: 20px;
+      color: #c7cdd5;
+      font-family: var(--mono);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .mini-metrics span { color: var(--muted-2); }
+
+    .tag {
+      padding: 6px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 10px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .candidate-lede {
+      max-width: 600px;
+      min-height: 48px;
+      margin: 10px 0 25px;
+      color: #aeb4bc;
+      font-size: 14px;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .metric {
+      padding-top: 13px;
+      border-top: 1px solid var(--line-soft);
+    }
+
+    .metric strong {
+      display: block;
+      margin-bottom: 4px;
+      font-family: var(--mono);
+      font-size: 22px;
+      font-weight: 500;
+      letter-spacing: -.04em;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted-2);
+      font-size: 10px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .plus { color: var(--add); }
+    .minus { color: var(--del); }
+
+    .footprint {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      padding: 16px 0 38px;
+    }
+
+    .footprint-card {
+      padding: 23px 25px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(17, 19, 22, .68);
+    }
+
+    .footprint-card h3 {
+      margin: 0 0 8px;
+      font-size: 15px;
+    }
+
+    .footprint-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .rail {
+      display: flex;
+      height: 6px;
+      margin: 18px 0 9px;
+      overflow: hidden;
+      border-radius: 99px;
+      background: var(--surface-2);
+    }
+
+    .rail span { display: block; height: 100%; }
+    .rail .sol-fill { width: 70%; background: var(--sol); }
+    .rail .claude-fill { width: 30%; background: var(--claude); }
+    .rail .base-fill { width: 100%; background: var(--base); opacity: .55; }
+    .rail .sol-comments { width: 6%; background: var(--sol); }
+    .rail .claude-comments { width: 53%; background: var(--claude); }
+
+    .rail-legend {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted-2);
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+
+    .analysis-grid {
+      display: grid;
+      grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr);
+      gap: 16px;
+      padding: 0 0 44px;
+    }
+
+    .verdict, .matrix-wrap {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+    }
+
+    .verdict { padding: 28px; }
+
+    .verdict-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 40px;
+      border: 1px solid #394047;
+      border-radius: 50%;
+      color: var(--sol);
+      font-family: Georgia, serif;
+      font-style: italic;
+    }
+
+    .verdict h3 {
+      max-width: 500px;
+      margin: 0 0 13px;
+      font-size: 28px;
+      line-height: 1.13;
+      letter-spacing: -.035em;
+    }
+
+    .verdict p {
+      max-width: 580px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .common-ground {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin-top: 26px;
+    }
+
+    .common-ground span {
+      padding: 6px 8px;
+      border: 1px solid var(--line-soft);
+      border-radius: 5px;
+      color: #8f969f;
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+
+    .matrix-wrap { overflow: hidden; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 17px 18px;
+      border-bottom: 1px solid var(--line-soft);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    th {
+      color: var(--muted-2);
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    th:nth-child(2) { color: var(--sol); }
+    th:nth-child(3) { color: var(--claude); }
+    td:first-child { width: 25%; color: var(--muted); }
+    td { color: #c3c8ce; }
+
+    .diff-section { scroll-margin-top: 12px; }
+
+    .diff-frame {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+      box-shadow: 0 28px 80px rgba(0, 0, 0, .22);
+    }
+
+    .diff-toolbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #14171a;
+    }
+
+    .pair-switcher {
+      display: flex;
+      gap: 3px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0d0f11;
+    }
+
+    .pair-groups {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 11px 18px;
+      min-width: 0;
+    }
+
+    .pair-group {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+    }
+
+    .pair-kicker {
+      color: var(--muted-2);
+      font-family: var(--mono);
+      font-size: 9px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .pair-group.complementary .pair-kicker { color: rgba(141, 183, 255, .72); }
+
+    .pair-group.complementary .pair-switcher { border-color: rgba(141, 183, 255, .18); }
+
+    .pair-button {
+      padding: 8px 11px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    .pair-button:hover { color: var(--text); }
+
+    .pair-button[aria-pressed="true"] {
+      background: #24282d;
+      color: var(--text);
+      box-shadow: inset 0 0 0 1px #30353c;
+    }
+
+    .diff-options {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .check-label {
+      display: flex;
+      gap: 7px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .check-label input { accent-color: var(--sol); }
+
+    .diff-head {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border-bottom: 1px solid var(--line);
+      background: #0e1012;
+    }
+
+    .diff-head > div {
+      padding: 12px 16px;
+      color: #b7bdc4;
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    .diff-head > div + div { border-left: 1px solid var(--line); }
+
+    .diff-head small {
+      margin-left: 7px;
+      color: var(--muted-2);
+    }
+
+    .diff-scroll {
+      max-height: 780px;
+      overflow: auto;
+      scrollbar-color: #343a40 transparent;
+    }
+
+    .diff-grid {
+      min-width: 1040px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      line-height: 1.62;
+    }
+
+    .diff-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 22px;
+    }
+
+    .diff-cell {
+      display: grid;
+      grid-template-columns: 46px 20px minmax(0, 1fr);
+      min-width: 0;
+      border-bottom: 1px solid rgba(41, 45, 51, .24);
+    }
+
+    .diff-cell + .diff-cell { border-left: 1px solid var(--line); }
+
+    .diff-cell.add { background: var(--add-bg); }
+    .diff-cell.del { background: var(--del-bg); }
+    .diff-cell.empty { background: rgba(255, 255, 255, .012); }
+
+    .line-no {
+      padding: 1px 8px 1px 0;
+      border-right: 1px solid rgba(41, 45, 51, .45);
+      color: #555d67;
+      text-align: right;
+      user-select: none;
+    }
+
+    .sign {
+      padding-top: 1px;
+      color: var(--muted-2);
+      text-align: center;
+      user-select: none;
+    }
+
+    .add .sign { color: var(--add); }
+    .del .sign { color: var(--del); }
+
+    .code {
+      overflow: hidden;
+      padding: 1px 12px 1px 4px;
+      color: #c9ced4;
+      white-space: pre;
+      text-overflow: clip;
+    }
+
+    .gap {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      min-height: 34px;
+      border-bottom: 1px solid var(--line-soft);
+      background: #0f1113;
+    }
+
+    .gap button {
+      grid-column: 1 / -1;
+      border: 0;
+      background: repeating-linear-gradient(-45deg, transparent, transparent 6px, rgba(255,255,255,.012) 6px, rgba(255,255,255,.012) 12px);
+      color: var(--muted-2);
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+
+    .gap button:hover { color: var(--text); background-color: #171a1e; }
+
+    .diff-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 12px 15px;
+      border-top: 1px solid var(--line);
+      color: var(--muted-2);
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+
+    .legend { display: flex; gap: 14px; }
+
+    .legend span::before {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 5px;
+      border-radius: 2px;
+      content: "";
+    }
+
+    .legend .added::before { background: var(--add); }
+    .legend .removed::before { background: var(--del); }
+
+    .notes {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      padding: 38px 0 0;
+    }
+
+    .note {
+      padding: 23px 24px;
+      border-left: 2px solid var(--line);
+      background: linear-gradient(90deg, rgba(255,255,255,.025), transparent);
+    }
+
+    .note.sol-note { border-color: var(--sol); }
+    .note.claude-note { border-color: var(--claude); }
+    .note.fable-note {
+      grid-column: 1 / -1;
+      border-color: var(--fable);
+    }
+
+    .note h3 { margin: 0 0 9px; font-size: 14px; }
+    .note p { margin: 0; color: var(--muted); font-size: 13px; }
+
+    footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 60px;
+      padding-top: 18px;
+      border-top: 1px solid var(--line-soft);
+      color: var(--muted-2);
+      font-family: var(--mono);
+      font-size: 10px;
+    }
+
+    @media (max-width: 900px) {
+      .shell { width: min(100% - 24px, 760px); padding-top: 26px; }
+      .masthead { grid-template-columns: 1fr; }
+      .file-card { min-width: 0; }
+      .candidate-grid, .footprint, .analysis-grid, .notes { grid-template-columns: 1fr; }
+      .complementary-card { grid-template-columns: 1fr; gap: 12px; }
+      .note.fable-note { grid-column: auto; }
+      .candidate { min-height: 0; }
+      .diff-toolbar { align-items: stretch; flex-direction: column; }
+      .diff-options { justify-content: flex-end; }
+      .pair-switcher { overflow-x: auto; }
+      .pair-button { flex: 1; white-space: nowrap; }
+      .pair-groups, .pair-group { align-items: stretch; flex-direction: column; }
+    }
+
+    @media (max-width: 560px) {
+      h1 { font-size: 48px; }
+      .metrics { grid-template-columns: repeat(2, 1fr); }
+      .candidate { padding: 21px; }
+      .diff-footer, footer { flex-direction: column; }
+      .diff-options { justify-content: space-between; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div>
+        <p class="eyebrow">Patch comparison · one file · two editing philosophies</p>
+        <h1><span style="color:var(--sol)">SOL</span><span class="versus">vs</span><span style="color:var(--claude)">CLAUDE</span></h1>
+        <p class="subtitle">Both preserve the AST layer’s behavior. The choice is whether this change should also rename the implementation for readability, or stay tightly focused on editing its comments.</p>
+      </div>
+      <aside class="file-card" aria-label="Comparison source">
+        <div class="label">Base version</div>
+        <div class="path">lint-color/ast.ts</div>
+        <div class="rule"></div>
+        <div class="meta"><span>219 lines</span><span>TypeScript</span></div>
+      </aside>
+    </header>
+
+    <section class="scoreboard" aria-labelledby="scoreboard-title">
+      <p class="section-label" id="scoreboard-title">01 · Primary comparison</p>
+      <div class="candidate-grid">
+        <article class="candidate sol">
+          <div class="candidate-top">
+            <h2>SOL</h2>
+            <span class="tag">Broad refactor</span>
+          </div>
+          <p class="candidate-lede">Removes almost all prose and expands terse identifiers throughout the implementation. The result is shorter, but the review mixes documentation policy with code-style changes.</p>
+          <div class="metrics">
+            <div class="metric"><strong class="plus">+65</strong><span>added</span></div>
+            <div class="metric"><strong class="minus">−110</strong><span>removed</span></div>
+            <div class="metric"><strong>174</strong><span>final lines</span></div>
+            <div class="metric"><strong>3</strong><span>comment lines</span></div>
+          </div>
+        </article>
+
+        <article class="candidate claude">
+          <div class="candidate-top">
+            <h2>CLAUDE</h2>
+            <span class="tag">Focused edit</span>
+          </div>
+          <p class="candidate-lede">Keeps identifiers and control flow stable while compressing comments around intent, edge cases, and known limitations. The patch is narrower and easier to attribute.</p>
+          <div class="metrics">
+            <div class="metric"><strong class="plus">+26</strong><span>added</span></div>
+            <div class="metric"><strong class="minus">−49</strong><span>removed</span></div>
+            <div class="metric"><strong>196</strong><span>final lines</span></div>
+            <div class="metric"><strong>26</strong><span>comment lines</span></div>
+          </div>
+        </article>
+      </div>
+      <aside class="complementary-card" aria-label="FABLE complementary comparison">
+        <div class="complementary-name">
+          <h3>FABLE</h3>
+          <span class="tag">Complementary</span>
+        </div>
+        <p>A second focused comment edit, close to CLAUDE in size. It preserves the original implementation and uses compact comments that retain a different selection of the base file’s rationale.</p>
+        <div class="mini-metrics">
+          <div><span>Δ</span> +22 / −46</div>
+          <div><span>final</span> 195</div>
+          <div><span>comments</span> 25</div>
+        </div>
+      </aside>
+    </section>
+
+    <section class="footprint" aria-label="Patch footprint visualizations">
+      <article class="footprint-card">
+        <h3>Review surface</h3>
+        <p>SOL accounts for 70% of the 250 changed lines across both patches.</p>
+        <div class="rail" aria-hidden="true"><span class="sol-fill"></span><span class="claude-fill"></span></div>
+        <div class="rail-legend"><span>SOL · 175</span><span>CLAUDE · 75</span></div>
+      </article>
+      <article class="footprint-card">
+        <h3>Comments retained</h3>
+        <p>Relative to the base file’s 49 full-line comments.</p>
+        <div class="rail" aria-hidden="true"><span class="sol-comments"></span></div>
+        <div class="rail-legend"><span>SOL · 6%</span><span>3 / 49</span></div>
+        <div class="rail" aria-hidden="true"><span class="claude-comments"></span></div>
+        <div class="rail-legend"><span>CLAUDE · 53%</span><span>26 / 49</span></div>
+      </article>
+    </section>
+
+    <section class="analysis-grid" aria-labelledby="decision-title">
+      <article class="verdict">
+        <div class="verdict-mark">i</div>
+        <h3 id="decision-title">Pick based on scope, not runtime behavior.</h3>
+        <p>No intentional behavior change is visible in either result. CLAUDE is the lower-risk choice for a comment-cleanup task. SOL is the stronger candidate only if expanded naming is explicitly part of the goal.</p>
+        <div class="common-ground" aria-label="Behavior preserved by both patches">
+          <span>parser mode</span><span>LRU(1) cache</span><span>AST walk</span><span>ignore marker</span><span>class statics</span><span>style props</span>
+        </div>
+      </article>
+
+      <div class="matrix-wrap">
+        <table>
+          <thead>
+            <tr><th>Review lens</th><th>SOL</th><th>CLAUDE</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Scope</td><td>Code + comments</td><td>Comments only</td></tr>
+            <tr><td>Naming</td><td>Expands <code>lo</code>, <code>rec</code>, <code>obj</code>, cache fields, and more</td><td>Preserves every identifier</td></tr>
+            <tr><td>Rationale</td><td>Mostly removed; three short comments remain</td><td>Condensed around non-obvious constraints</td></tr>
+            <tr><td>Diff signal</td><td>Renames obscure the comment-only delta</td><td>Every hunk maps to documentation</td></tr>
+            <tr><td>Best fit</td><td>Holistic readability refactor</td><td>Conservative comment cleanup</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="diff-section" id="diff" aria-labelledby="diff-title">
+      <p class="section-label" id="diff-title">02 · Source comparison</p>
+      <div class="diff-frame">
+        <div class="diff-toolbar">
+          <div class="pair-groups">
+            <div class="pair-group">
+              <span class="pair-kicker">Primary</span>
+              <div class="pair-switcher" role="group" aria-label="Primary SOL and CLAUDE comparisons">
+                <button class="pair-button" data-pair="variants" aria-pressed="true">SOL ↔ CLAUDE</button>
+                <button class="pair-button" data-pair="sol" aria-pressed="false">Base → SOL</button>
+                <button class="pair-button" data-pair="claude" aria-pressed="false">Base → CLAUDE</button>
+              </div>
+            </div>
+            <div class="pair-group complementary">
+              <span class="pair-kicker">FABLE · complementary</span>
+              <div class="pair-switcher" role="group" aria-label="Complementary FABLE comparisons">
+                <button class="pair-button" data-pair="solFable" aria-pressed="false">SOL ↔ FABLE</button>
+                <button class="pair-button" data-pair="claudeFable" aria-pressed="false">CLAUDE ↔ FABLE</button>
+                <button class="pair-button" data-pair="fable" aria-pressed="false">Base → FABLE</button>
+              </div>
+            </div>
+          </div>
+          <div class="diff-options">
+            <label class="check-label"><input id="wrap-lines" type="checkbox"> Wrap lines</label>
+            <label class="check-label"><input id="show-all" type="checkbox"> Show unchanged</label>
+          </div>
+        </div>
+        <div class="diff-head">
+          <div id="left-title">SOL <small>result</small></div>
+          <div id="right-title">CLAUDE <small>result</small></div>
+        </div>
+        <div class="diff-scroll" id="diff-scroll">
+          <div class="diff-grid" id="diff-grid" aria-live="polite"></div>
+        </div>
+        <div class="diff-footer">
+          <div class="legend"><span class="removed">removed</span><span class="added">added</span></div>
+          <div id="visible-summary">Calculating comparison…</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="notes" aria-label="Notable patch details">
+      <article class="note sol-note">
+        <h3>SOL’s most useful addition</h3>
+        <p>Names such as <code>parserLanguageForFile</code>, <code>lowerIndex</code>, <code>markerMatch</code>, and <code>objectExpression</code> make local intent readable without nearby narration.</p>
+      </article>
+      <article class="note claude-note">
+        <h3>CLAUDE’s most useful preservation</h3>
+        <p>It keeps the reasons behind TS-versus-TSX parsing, shallow-versus-deep class scanning, cyclic parent links, and computed property handling close to the code.</p>
+      </article>
+      <article class="note fable-note">
+        <h3>FABLE as a complementary reference</h3>
+        <p>FABLE lands one line shorter than CLAUDE and retains nearly the same amount of commentary. Its main difference is editorial: it keeps physical-line suppression semantics and the shallow/deep split explicit, while dropping examples around JSX names and computed properties.</p>
+      </article>
+    </section>
+
+    <footer>
+      <span>Primary · SOL.patch ↔ CLAUDE.patch · Complementary · FABLE.patch</span>
+      <span>Base · lint-color/ast.ts</span>
+    </footer>
+  </main>
+
+  <script id="base-source" type="application/json">"// AST layer — the single boundary between raw TSX/TS source and every rule.\n//\n// One oxc parse per file replaces the hand-rolled JSX scanning that treated\n// every quoted string as a className. Rules walk this tree instead of the text,\n// so error messages, URLs, GraphQL/regex literals, and comments are never\n// mistaken for class lists (root cause of the review's dominant FP class).\n\nimport { parseSync } from \"oxc-parser\";\n// AST-node types are re-exported by oxc-parser from @oxc-project/types; they are\n// ESTree-shaped, so the `.type` discriminants below (\"Literal\", \"Property\", …)\n// are the runtime string values, not the interface names.\nimport type {\n  Program,\n  Comment,\n  Node,\n  ObjectExpression,\n  ObjectProperty,\n  JSXElementName,\n  Expression,\n} from \"oxc-parser\";\n\nexport type ParsedAst = {\n  program: Program;\n  comments: Comment[];\n  lineStarts: number[];\n  ignored: Set\u003cnumber> | null;\n};\n\nexport type ClassStatic = { text: string; node: Node };\n\nexport type StyleProp = { keyName: string; valueNode: Expression; node: ObjectProperty };\n\ntype Lang = \"tsx\" | \"ts\";\n\n// oxc nodes carry byte offsets (Span), not 1-based lines.\nexport function buildLineStarts(src: string): number[] {\n  const starts = [0];\n  for (let k = 0; k \u003c src.length; k++) {\n    if (src[k] === \"\\n\") starts.push(k + 1);\n  }\n  return starts;\n}\n\nexport function offsetToLine(lineStarts: number[], offset: number): number {\n  let lo = 0;\n  let hi = lineStarts.length - 1;\n  while (lo \u003c hi) {\n    const mid = (lo + hi + 1) >> 1;\n    if (lineStarts[mid] \u003c= offset) lo = mid;\n    else hi = mid - 1;\n  }\n  return lo + 1;\n}\n\n// index.ts runs four rule passes over the same source; the LRU(1) cache makes\n// that one parse per file.\nlet cache: { source: string; lang: Lang; ast: ParsedAst } | null = null;\n\n// `.tsx` parses JSX; `.ts` must NOT — under tsx mode a legal plain-TS generic\n// arrow (`const f = \u003cT>(x) => x`) or angle-bracket cast (`\u003cFoo>bar`) is a parse\n// error, which would silently drop the rest of the file. `tsx` and `ts` are not\n// a superset relationship, so pick by extension.\nfunction langForFile(filePath: string): Lang {\n  return /\\.(tsx|jsx)$/.test(filePath) ? \"tsx\" : \"ts\";\n}\n\nexport function parseSource(source: string, filePath = \"file.tsx\"): ParsedAst {\n  const lang = langForFile(filePath);\n  if (cache && cache.source === source && cache.lang === lang) return cache.ast;\n  // On a syntax error oxc returns a best-effort recovered program; we walk what\n  // parsed rather than surface `errors`. A genuinely unparseable file therefore\n  // lints as clean — acceptable for v1 (the compiler flags real syntax errors),\n  // and the lang-by-extension choice above keeps valid TS/TSX from tripping it.\n  const { program, comments } = parseSync(filePath, source, { lang });\n  const ast: ParsedAst = { program, comments, lineStarts: buildLineStarts(source), ignored: null };\n  cache = { source, lang, ast };\n  return ast;\n}\n\n// Skips the `parent` back-reference so the walk can't cycle.\nexport function walk(node: unknown, enter: (node: Node) => void): void {\n  if (!node || typeof node !== \"object\") return;\n  if (Array.isArray(node)) {\n    for (const child of node) walk(child, enter);\n    return;\n  }\n  // The `typeof rec.type === \"string\"` guard is what makes the cast to Node sound.\n  const rec = node as Record\u003cstring, unknown>;\n  if (typeof rec.type === \"string\") enter(node as Node);\n  for (const key in rec) {\n    if (key === \"parent\" || key === \"type\") continue;\n    const value = rec[key];\n    if (value && typeof value === \"object\") walk(value, enter);\n  }\n}\n\n// Resolve a JSX element or attribute name node to its source string.\n// `\u003cdiv>` → \"div\", `\u003cDialog.Trigger>` → \"Dialog.Trigger\", `\u003csvg:a>` → \"svg:a\".\nexport function jsxName(node: JSXElementName | null | undefined): string {\n  if (!node) return \"\";\n  switch (node.type) {\n    case \"JSXIdentifier\":\n      return node.name;\n    case \"JSXNamespacedName\":\n      return `${node.namespace.name}:${node.name.name}`;\n    case \"JSXMemberExpression\":\n      return `${jsxName(node.object)}.${node.property.name}`;\n    default:\n      return \"\";\n  }\n}\n\n// Only the exact marker word in a *comment* suppresses — a className like\n// \"color-lint-ignore-panel\" no longer counts (fixes #18 superstring match).\n// Suppression is scoped to the physical line the marker sits on, so a multi-line\n// comment that merely mentions the word can't swallow other lines.\nconst IGNORE_MARKER = /color-lint-ignore(?![-\\w])/;\nconst COMMENT_DELIM_LEN = 2; // `//` or `/*` — comment.value excludes the opener\n\nexport function ignoredLines(ast: ParsedAst): Set\u003cnumber> {\n  if (ast.ignored) return ast.ignored;\n  const lines = new Set\u003cnumber>();\n  for (const c of ast.comments) {\n    const m = IGNORE_MARKER.exec(c.value);\n    if (!m) continue;\n    const markerOffset = c.start + COMMENT_DELIM_LEN + m.index;\n    lines.add(offsetToLine(ast.lineStarts, markerOffset));\n  }\n  ast.ignored = lines;\n  return lines;\n}\n\n// Static class strings carried by a className/class attribute value, each with\n// the node whose offset locates it. v1 scans a plain string literal and a\n// template literal's static quasis only. Class strings reached through a call\n// (cn/clsx), a ternary, or a logical expression are a deliberate v1 non-goal —\n// the general token pipeline stays \"bare className/class\" so no non-class string\n// is ever scanned; those shapes return with the callee allowlist in v1.1.\n// (no-component-color-override opts into the deep view below for cn()/clsx().)\nexport function classNameStatics(value: Node | null | undefined): ClassStatic[] {\n  const out: ClassStatic[] = [];\n  collectClassStatics(value, out);\n  return out;\n}\n\nfunction collectClassStatics(node: Node | null | undefined, out: ClassStatic[]): void {\n  if (!node) return;\n  if (node.type === \"Literal\" && typeof node.value === \"string\") {\n    out.push({ text: node.value, node });\n  } else if (node.type === \"JSXExpressionContainer\") {\n    collectClassStatics(node.expression, out);\n  } else if (node.type === \"TemplateLiteral\") {\n    for (const q of node.quasis) {\n      out.push({ text: q.value.cooked ?? q.value.raw ?? \"\", node: q });\n    }\n  }\n}\n\n// Every static string reachable inside a className value, descending into call\n// arguments (cn/clsx/…) and any nested expression. no-component-color-override\n// needs this deep view to catch color classes wrapped in a helper; the general\n// token pipeline deliberately stays shallow (v1 non-goal).\n//\n// KNOWN v1 LIMITATION: without a callee allowlist this also collects strings\n// that are not class lists — an i18n/aria argument nested in the expression\n// (e.g. `cn(\"flex\", t(\"pick a text-red-500 tone\"))`) is tokenized and can false-\n// fire on a watched component. This matches the pre-AST behavior and is bounded\n// by the v1.1 callee allowlist (cn/clsx/cva/tw``); see PRD §2 Non-Goals.\nexport function classNameStaticsDeep(value: unknown): ClassStatic[] {\n  const out: ClassStatic[] = [];\n  walk(value, (n) => {\n    if (n.type === \"Literal\" && typeof n.value === \"string\") {\n      out.push({ text: n.value, node: n });\n    } else if (n.type === \"TemplateElement\") {\n      out.push({ text: n.value.cooked ?? n.value.raw ?? \"\", node: n });\n    }\n  });\n  return out;\n}\n\n// Own properties of a style object literal, as { keyName, valueNode, node }.\n// Detected via the object AST, not brace counting, so a `{` inside a string\n// value can't desync anything (fixes #2 / M2). Returns [] for style={expr}.\nexport function styleObjectProps(attrValue: Node | null | undefined): StyleProp[] {\n  const obj = objectExpressionOf(attrValue);\n  if (!obj) return [];\n  const props: StyleProp[] = [];\n  for (const p of obj.properties) {\n    if (p.type !== \"Property\") continue; // skip SpreadElement\n    const keyName = propKeyName(p);\n    if (keyName == null) continue;\n    props.push({ keyName, valueNode: p.value, node: p });\n  }\n  return props;\n}\n\nfunction objectExpressionOf(attrValue: Node | null | undefined): ObjectExpression | null {\n  if (!attrValue || attrValue.type !== \"JSXExpressionContainer\") return null;\n  let e: Node = attrValue.expression;\n  while (\n    e &&\n    (e.type === \"TSAsExpression\" ||\n      e.type === \"TSSatisfiesExpression\" ||\n      e.type === \"ParenthesizedExpression\")\n  ) {\n    e = e.expression;\n  }\n  return e && e.type === \"ObjectExpression\" ? e : null;\n}\n\nfunction propKeyName(p: ObjectProperty): string | null {\n  const k = p.key;\n  if (!k) return null;\n  // A computed key (`[dynamic]: …`) has no statically-known name.\n  if (p.computed && k.type !== \"Literal\") return null;\n  if (k.type === \"Identifier\") return k.name;\n  if (k.type === \"Literal\") return typeof k.value === \"string\" ? k.value : null;\n  return null;\n}\n"</script>
+  <script id="sol-source" type="application/json">"import { parseSync } from \"oxc-parser\";\nimport type {\n  Program,\n  Comment,\n  Node,\n  ObjectExpression,\n  ObjectProperty,\n  JSXElementName,\n  Expression,\n} from \"oxc-parser\";\n\nexport type ParsedAst = {\n  program: Program;\n  comments: Comment[];\n  lineStarts: number[];\n  ignored: Set\u003cnumber> | null;\n};\n\nexport type ClassStatic = { text: string; node: Node };\n\nexport type StyleProp = { keyName: string; valueNode: Expression; node: ObjectProperty };\n\ntype ParserLanguage = \"tsx\" | \"ts\";\n\nexport function buildLineStarts(source: string): number[] {\n  const starts = [0];\n  for (let index = 0; index \u003c source.length; index++) {\n    if (source[index] === \"\\n\") starts.push(index + 1);\n  }\n  return starts;\n}\n\nexport function offsetToLine(lineStarts: number[], offset: number): number {\n  let lowerIndex = 0;\n  let upperIndex = lineStarts.length - 1;\n  while (lowerIndex \u003c upperIndex) {\n    const middleIndex = (lowerIndex + upperIndex + 1) >> 1;\n    if (lineStarts[middleIndex] \u003c= offset) lowerIndex = middleIndex;\n    else upperIndex = middleIndex - 1;\n  }\n  return lowerIndex + 1;\n}\n\nlet parseCache: { source: string; language: ParserLanguage; ast: ParsedAst } | null = null;\n\n// TSX mode misparses valid TypeScript generic arrows and angle-bracket assertions.\nfunction parserLanguageForFile(filePath: string): ParserLanguage {\n  return /\\.(tsx|jsx)$/.test(filePath) ? \"tsx\" : \"ts\";\n}\n\nexport function parseSource(source: string, filePath = \"file.tsx\"): ParsedAst {\n  const language = parserLanguageForFile(filePath);\n  if (parseCache && parseCache.source === source && parseCache.language === language) {\n    return parseCache.ast;\n  }\n  // Syntax errors belong to the compiler; lint continues with oxc's recovered tree.\n  const { program, comments } = parseSync(filePath, source, { lang: language });\n  const ast: ParsedAst = { program, comments, lineStarts: buildLineStarts(source), ignored: null };\n  parseCache = { source, language, ast };\n  return ast;\n}\n\nexport function walk(node: unknown, enter: (node: Node) => void): void {\n  if (!node || typeof node !== \"object\") return;\n  if (Array.isArray(node)) {\n    for (const child of node) walk(child, enter);\n    return;\n  }\n  const record = node as Record\u003cstring, unknown>;\n  if (typeof record.type === \"string\") enter(node as Node);\n  for (const key in record) {\n    if (key === \"parent\" || key === \"type\") continue;\n    const value = record[key];\n    if (value && typeof value === \"object\") walk(value, enter);\n  }\n}\n\nexport function jsxName(node: JSXElementName | null | undefined): string {\n  if (!node) return \"\";\n  switch (node.type) {\n    case \"JSXIdentifier\":\n      return node.name;\n    case \"JSXNamespacedName\":\n      return `${node.namespace.name}:${node.name.name}`;\n    case \"JSXMemberExpression\":\n      return `${jsxName(node.object)}.${node.property.name}`;\n    default:\n      return \"\";\n  }\n}\n\nconst IGNORE_MARKER = /color-lint-ignore(?![-\\w])/;\nconst COMMENT_OPENING_LENGTH = 2;\n\nexport function ignoredLines(ast: ParsedAst): Set\u003cnumber> {\n  if (ast.ignored) return ast.ignored;\n  const lines = new Set\u003cnumber>();\n  for (const comment of ast.comments) {\n    const markerMatch = IGNORE_MARKER.exec(comment.value);\n    if (!markerMatch) continue;\n    const markerOffset = comment.start + COMMENT_OPENING_LENGTH + markerMatch.index;\n    lines.add(offsetToLine(ast.lineStarts, markerOffset));\n  }\n  ast.ignored = lines;\n  return lines;\n}\n\nexport function classNameStatics(value: Node | null | undefined): ClassStatic[] {\n  const statics: ClassStatic[] = [];\n  collectClassStatics(value, statics);\n  return statics;\n}\n\nfunction collectClassStatics(node: Node | null | undefined, statics: ClassStatic[]): void {\n  if (!node) return;\n  if (node.type === \"Literal\" && typeof node.value === \"string\") {\n    statics.push({ text: node.value, node });\n  } else if (node.type === \"JSXExpressionContainer\") {\n    collectClassStatics(node.expression, statics);\n  } else if (node.type === \"TemplateLiteral\") {\n    for (const quasi of node.quasis) {\n      statics.push({ text: quasi.value.cooked ?? quasi.value.raw ?? \"\", node: quasi });\n    }\n  }\n}\n\n// Scanning every nested string preserves legacy behavior but can inspect non-class arguments.\nexport function classNameStaticsDeep(value: unknown): ClassStatic[] {\n  const statics: ClassStatic[] = [];\n  walk(value, (node) => {\n    if (node.type === \"Literal\" && typeof node.value === \"string\") {\n      statics.push({ text: node.value, node });\n    } else if (node.type === \"TemplateElement\") {\n      statics.push({ text: node.value.cooked ?? node.value.raw ?? \"\", node });\n    }\n  });\n  return statics;\n}\n\nexport function styleObjectProps(attrValue: Node | null | undefined): StyleProp[] {\n  const objectExpression = objectExpressionOf(attrValue);\n  if (!objectExpression) return [];\n  const props: StyleProp[] = [];\n  for (const property of objectExpression.properties) {\n    if (property.type !== \"Property\") continue;\n    const keyName = propKeyName(property);\n    if (keyName == null) continue;\n    props.push({ keyName, valueNode: property.value, node: property });\n  }\n  return props;\n}\n\nfunction objectExpressionOf(attrValue: Node | null | undefined): ObjectExpression | null {\n  if (!attrValue || attrValue.type !== \"JSXExpressionContainer\") return null;\n  let expression: Node = attrValue.expression;\n  while (\n    expression &&\n    (expression.type === \"TSAsExpression\" ||\n      expression.type === \"TSSatisfiesExpression\" ||\n      expression.type === \"ParenthesizedExpression\")\n  ) {\n    expression = expression.expression;\n  }\n  return expression && expression.type === \"ObjectExpression\" ? expression : null;\n}\n\nfunction propKeyName(property: ObjectProperty): string | null {\n  const key = property.key;\n  if (!key) return null;\n  if (property.computed && key.type !== \"Literal\") return null;\n  if (key.type === \"Identifier\") return key.name;\n  if (key.type === \"Literal\") return typeof key.value === \"string\" ? key.value : null;\n  return null;\n}\n"</script>
+  <script id="claude-source" type="application/json">"// The single boundary between raw TSX/TS source and every rule. Rules walk this\n// tree, never the text, so URLs, error messages, and regex/GraphQL literals are\n// never mistaken for class lists.\n\nimport { parseSync } from \"oxc-parser\";\nimport type {\n  Program,\n  Comment,\n  Node,\n  ObjectExpression,\n  ObjectProperty,\n  JSXElementName,\n  Expression,\n} from \"oxc-parser\";\n\nexport type ParsedAst = {\n  program: Program;\n  comments: Comment[];\n  lineStarts: number[];\n  ignored: Set\u003cnumber> | null;\n};\n\nexport type ClassStatic = { text: string; node: Node };\n\nexport type StyleProp = { keyName: string; valueNode: Expression; node: ObjectProperty };\n\ntype Lang = \"tsx\" | \"ts\";\n\nexport function buildLineStarts(src: string): number[] {\n  const starts = [0];\n  for (let k = 0; k \u003c src.length; k++) {\n    if (src[k] === \"\\n\") starts.push(k + 1);\n  }\n  return starts;\n}\n\nexport function offsetToLine(lineStarts: number[], offset: number): number {\n  let lo = 0;\n  let hi = lineStarts.length - 1;\n  while (lo \u003c hi) {\n    const mid = (lo + hi + 1) >> 1;\n    if (lineStarts[mid] \u003c= offset) lo = mid;\n    else hi = mid - 1;\n  }\n  return lo + 1;\n}\n\n// index.ts runs four rule passes over the same source; LRU(1) keeps it one parse.\nlet cache: { source: string; lang: Lang; ast: ParsedAst } | null = null;\n\n// tsx is not a superset of ts. Under tsx mode a legal plain-TS generic arrow\n// (`const f = \u003cT>(x) => x`) or angle-bracket cast (`\u003cFoo>bar`) is a parse error,\n// which silently drops the rest of the file.\nfunction langForFile(filePath: string): Lang {\n  return /\\.(tsx|jsx)$/.test(filePath) ? \"tsx\" : \"ts\";\n}\n\nexport function parseSource(source: string, filePath = \"file.tsx\"): ParsedAst {\n  const lang = langForFile(filePath);\n  if (cache && cache.source === source && cache.lang === lang) return cache.ast;\n  // oxc recovers from syntax errors into a partial program. We walk it and ignore\n  // `errors`, so an unparseable file lints as clean — the compiler flags those.\n  const { program, comments } = parseSync(filePath, source, { lang });\n  const ast: ParsedAst = { program, comments, lineStarts: buildLineStarts(source), ignored: null };\n  cache = { source, lang, ast };\n  return ast;\n}\n\nexport function walk(node: unknown, enter: (node: Node) => void): void {\n  if (!node || typeof node !== \"object\") return;\n  if (Array.isArray(node)) {\n    for (const child of node) walk(child, enter);\n    return;\n  }\n  const rec = node as Record\u003cstring, unknown>;\n  if (typeof rec.type === \"string\") enter(node as Node);\n  for (const key in rec) {\n    // `parent` is a back-reference; descending into it would cycle.\n    if (key === \"parent\" || key === \"type\") continue;\n    const value = rec[key];\n    if (value && typeof value === \"object\") walk(value, enter);\n  }\n}\n\n// `\u003cdiv>` → \"div\", `\u003cDialog.Trigger>` → \"Dialog.Trigger\", `\u003csvg:a>` → \"svg:a\".\nexport function jsxName(node: JSXElementName | null | undefined): string {\n  if (!node) return \"\";\n  switch (node.type) {\n    case \"JSXIdentifier\":\n      return node.name;\n    case \"JSXNamespacedName\":\n      return `${node.namespace.name}:${node.name.name}`;\n    case \"JSXMemberExpression\":\n      return `${jsxName(node.object)}.${node.property.name}`;\n    default:\n      return \"\";\n  }\n}\n\n// The lookahead stops a class name like \"color-lint-ignore-panel\" from matching.\nconst IGNORE_MARKER = /color-lint-ignore(?![-\\w])/;\n// oxc's `comment.value` excludes the opening `//` or `/*`.\nconst COMMENT_DELIM_LEN = 2;\n\nexport function ignoredLines(ast: ParsedAst): Set\u003cnumber> {\n  if (ast.ignored) return ast.ignored;\n  const lines = new Set\u003cnumber>();\n  for (const c of ast.comments) {\n    const m = IGNORE_MARKER.exec(c.value);\n    if (!m) continue;\n    const markerOffset = c.start + COMMENT_DELIM_LEN + m.index;\n    lines.add(offsetToLine(ast.lineStarts, markerOffset));\n  }\n  ast.ignored = lines;\n  return lines;\n}\n\n// Strings reached through a call (cn/clsx), a ternary, or a logical expression\n// are a deliberate v1 non-goal: staying shallow guarantees no non-class string is\n// ever scanned. The v1.1 callee allowlist covers those shapes.\nexport function classNameStatics(value: Node | null | undefined): ClassStatic[] {\n  const out: ClassStatic[] = [];\n  collectClassStatics(value, out);\n  return out;\n}\n\nfunction collectClassStatics(node: Node | null | undefined, out: ClassStatic[]): void {\n  if (!node) return;\n  if (node.type === \"Literal\" && typeof node.value === \"string\") {\n    out.push({ text: node.value, node });\n  } else if (node.type === \"JSXExpressionContainer\") {\n    collectClassStatics(node.expression, out);\n  } else if (node.type === \"TemplateLiteral\") {\n    for (const q of node.quasis) {\n      out.push({ text: q.value.cooked ?? q.value.raw ?? \"\", node: q });\n    }\n  }\n}\n\n// Descends into call arguments and nested expressions, which only\n// no-component-color-override wants — it must see color classes wrapped in a\n// cn()/clsx() helper.\n//\n// KNOWN v1 LIMITATION: with no callee allowlist this also collects strings that\n// are not class lists, so a nested i18n argument (`cn(\"flex\", t(\"a text-red-500\n// tone\"))`) can false-fire on a watched component. Bounded by the v1.1 callee\n// allowlist; see PRD §2 Non-Goals.\nexport function classNameStaticsDeep(value: unknown): ClassStatic[] {\n  const out: ClassStatic[] = [];\n  walk(value, (n) => {\n    if (n.type === \"Literal\" && typeof n.value === \"string\") {\n      out.push({ text: n.value, node: n });\n    } else if (n.type === \"TemplateElement\") {\n      out.push({ text: n.value.cooked ?? n.value.raw ?? \"\", node: n });\n    }\n  });\n  return out;\n}\n\n// Empty unless the attribute value is an object literal — `style={expr}` yields [].\nexport function styleObjectProps(attrValue: Node | null | undefined): StyleProp[] {\n  const obj = objectExpressionOf(attrValue);\n  if (!obj) return [];\n  const props: StyleProp[] = [];\n  for (const p of obj.properties) {\n    if (p.type !== \"Property\") continue;\n    const keyName = propKeyName(p);\n    if (keyName == null) continue;\n    props.push({ keyName, valueNode: p.value, node: p });\n  }\n  return props;\n}\n\nfunction objectExpressionOf(attrValue: Node | null | undefined): ObjectExpression | null {\n  if (!attrValue || attrValue.type !== \"JSXExpressionContainer\") return null;\n  let e: Node = attrValue.expression;\n  while (\n    e &&\n    (e.type === \"TSAsExpression\" ||\n      e.type === \"TSSatisfiesExpression\" ||\n      e.type === \"ParenthesizedExpression\")\n  ) {\n    e = e.expression;\n  }\n  return e && e.type === \"ObjectExpression\" ? e : null;\n}\n\nfunction propKeyName(p: ObjectProperty): string | null {\n  const k = p.key;\n  if (!k) return null;\n  // `[dynamic]: …` has no static name, but `[\"color\"]: …` does.\n  if (p.computed && k.type !== \"Literal\") return null;\n  if (k.type === \"Identifier\") return k.name;\n  if (k.type === \"Literal\") return typeof k.value === \"string\" ? k.value : null;\n  return null;\n}\n"</script>
+  <script id="fable-source" type="application/json">"// AST layer — the single boundary between raw TSX/TS source and every rule.\n// Rules walk the parse tree instead of the text, so error messages, URLs, and\n// comments are never mistaken for class lists.\n\nimport { parseSync } from \"oxc-parser\";\nimport type {\n  Program,\n  Comment,\n  Node,\n  ObjectExpression,\n  ObjectProperty,\n  JSXElementName,\n  Expression,\n} from \"oxc-parser\";\n\nexport type ParsedAst = {\n  program: Program;\n  comments: Comment[];\n  lineStarts: number[];\n  ignored: Set\u003cnumber> | null;\n};\n\nexport type ClassStatic = { text: string; node: Node };\n\nexport type StyleProp = { keyName: string; valueNode: Expression; node: ObjectProperty };\n\ntype Lang = \"tsx\" | \"ts\";\n\n// oxc nodes carry byte offsets (Span), not 1-based lines.\nexport function buildLineStarts(src: string): number[] {\n  const starts = [0];\n  for (let k = 0; k \u003c src.length; k++) {\n    if (src[k] === \"\\n\") starts.push(k + 1);\n  }\n  return starts;\n}\n\nexport function offsetToLine(lineStarts: number[], offset: number): number {\n  let lo = 0;\n  let hi = lineStarts.length - 1;\n  while (lo \u003c hi) {\n    const mid = (lo + hi + 1) >> 1;\n    if (lineStarts[mid] \u003c= offset) lo = mid;\n    else hi = mid - 1;\n  }\n  return lo + 1;\n}\n\n// Rule passes re-enter with the same source; the size-1 cache makes that one\n// parse per file.\nlet cache: { source: string; lang: Lang; ast: ParsedAst } | null = null;\n\n// `.ts` must NOT parse as tsx — under tsx mode a legal plain-TS generic arrow\n// (`const f = \u003cT>(x) => x`) or angle-bracket cast (`\u003cFoo>bar`) is a parse error.\nfunction langForFile(filePath: string): Lang {\n  return /\\.(tsx|jsx)$/.test(filePath) ? \"tsx\" : \"ts\";\n}\n\nexport function parseSource(source: string, filePath = \"file.tsx\"): ParsedAst {\n  const lang = langForFile(filePath);\n  if (cache && cache.source === source && cache.lang === lang) return cache.ast;\n  // On a syntax error oxc returns a best-effort recovered program; we walk what\n  // parsed rather than surface `errors`, so an unparseable file lints as clean.\n  // Deliberate for v1: the compiler flags real syntax errors.\n  const { program, comments } = parseSync(filePath, source, { lang });\n  const ast: ParsedAst = { program, comments, lineStarts: buildLineStarts(source), ignored: null };\n  cache = { source, lang, ast };\n  return ast;\n}\n\n// Skips the `parent` back-reference so the walk can't cycle.\nexport function walk(node: unknown, enter: (node: Node) => void): void {\n  if (!node || typeof node !== \"object\") return;\n  if (Array.isArray(node)) {\n    for (const child of node) walk(child, enter);\n    return;\n  }\n  const rec = node as Record\u003cstring, unknown>;\n  if (typeof rec.type === \"string\") enter(node as Node);\n  for (const key in rec) {\n    if (key === \"parent\" || key === \"type\") continue;\n    const value = rec[key];\n    if (value && typeof value === \"object\") walk(value, enter);\n  }\n}\n\nexport function jsxName(node: JSXElementName | null | undefined): string {\n  if (!node) return \"\";\n  switch (node.type) {\n    case \"JSXIdentifier\":\n      return node.name;\n    case \"JSXNamespacedName\":\n      return `${node.namespace.name}:${node.name.name}`;\n    case \"JSXMemberExpression\":\n      return `${jsxName(node.object)}.${node.property.name}`;\n    default:\n      return \"\";\n  }\n}\n\n// Lookahead rejects superstrings like \"color-lint-ignore-panel\". Suppression\n// covers only the marker's physical line, so a multi-line comment that merely\n// mentions the word can't swallow other lines.\nconst IGNORE_MARKER = /color-lint-ignore(?![-\\w])/;\nconst COMMENT_DELIM_LEN = 2; // comment.value excludes the `//` or `/*` opener\n\nexport function ignoredLines(ast: ParsedAst): Set\u003cnumber> {\n  if (ast.ignored) return ast.ignored;\n  const lines = new Set\u003cnumber>();\n  for (const c of ast.comments) {\n    const m = IGNORE_MARKER.exec(c.value);\n    if (!m) continue;\n    const markerOffset = c.start + COMMENT_DELIM_LEN + m.index;\n    lines.add(offsetToLine(ast.lineStarts, markerOffset));\n  }\n  ast.ignored = lines;\n  return lines;\n}\n\n// Shallow by design: plain string literals and template quasis only. Class\n// strings behind a call (cn/clsx), ternary, or logical expression are a\n// deliberate v1 non-goal (callee allowlist arrives in v1.1);\n// classNameStaticsDeep below is the opt-in deep view.\nexport function classNameStatics(value: Node | null | undefined): ClassStatic[] {\n  const out: ClassStatic[] = [];\n  collectClassStatics(value, out);\n  return out;\n}\n\nfunction collectClassStatics(node: Node | null | undefined, out: ClassStatic[]): void {\n  if (!node) return;\n  if (node.type === \"Literal\" && typeof node.value === \"string\") {\n    out.push({ text: node.value, node });\n  } else if (node.type === \"JSXExpressionContainer\") {\n    collectClassStatics(node.expression, out);\n  } else if (node.type === \"TemplateLiteral\") {\n    for (const q of node.quasis) {\n      out.push({ text: q.value.cooked ?? q.value.raw ?? \"\", node: q });\n    }\n  }\n}\n\n// Deep view for no-component-color-override: every static string reachable in\n// the value, descending into call arguments (cn/clsx/…).\n//\n// KNOWN v1 LIMITATION: without a callee allowlist this also collects non-class\n// strings — e.g. an i18n argument like `cn(\"flex\", t(\"pick a text-red-500\n// tone\"))` can false-fire. Bounded by the v1.1 callee allowlist; see PRD §2.\nexport function classNameStaticsDeep(value: unknown): ClassStatic[] {\n  const out: ClassStatic[] = [];\n  walk(value, (n) => {\n    if (n.type === \"Literal\" && typeof n.value === \"string\") {\n      out.push({ text: n.value, node: n });\n    } else if (n.type === \"TemplateElement\") {\n      out.push({ text: n.value.cooked ?? n.value.raw ?? \"\", node: n });\n    }\n  });\n  return out;\n}\n\nexport function styleObjectProps(attrValue: Node | null | undefined): StyleProp[] {\n  const obj = objectExpressionOf(attrValue);\n  if (!obj) return [];\n  const props: StyleProp[] = [];\n  for (const p of obj.properties) {\n    if (p.type !== \"Property\") continue;\n    const keyName = propKeyName(p);\n    if (keyName == null) continue;\n    props.push({ keyName, valueNode: p.value, node: p });\n  }\n  return props;\n}\n\nfunction objectExpressionOf(attrValue: Node | null | undefined): ObjectExpression | null {\n  if (!attrValue || attrValue.type !== \"JSXExpressionContainer\") return null;\n  let e: Node = attrValue.expression;\n  while (\n    e &&\n    (e.type === \"TSAsExpression\" ||\n      e.type === \"TSSatisfiesExpression\" ||\n      e.type === \"ParenthesizedExpression\")\n  ) {\n    e = e.expression;\n  }\n  return e && e.type === \"ObjectExpression\" ? e : null;\n}\n\nfunction propKeyName(p: ObjectProperty): string | null {\n  const k = p.key;\n  if (!k) return null;\n  if (p.computed && k.type !== \"Literal\") return null;\n  if (k.type === \"Identifier\") return k.name;\n  if (k.type === \"Literal\") return typeof k.value === \"string\" ? k.value : null;\n  return null;\n}\n"</script>
+  <script>
+    const sources = {
+      base: JSON.parse(document.getElementById("base-source").textContent),
+      sol: JSON.parse(document.getElementById("sol-source").textContent),
+      claude: JSON.parse(document.getElementById("claude-source").textContent),
+      fable: JSON.parse(document.getElementById("fable-source").textContent),
+    };
+
+    const pairs = {
+      sol: { left: "base", right: "sol", leftTitle: "Base", rightTitle: "SOL" },
+      claude: { left: "base", right: "claude", leftTitle: "Base", rightTitle: "CLAUDE" },
+      variants: { left: "sol", right: "claude", leftTitle: "SOL", rightTitle: "CLAUDE" },
+      solFable: { left: "sol", right: "fable", leftTitle: "SOL", rightTitle: "FABLE" },
+      claudeFable: { left: "claude", right: "fable", leftTitle: "CLAUDE", rightTitle: "FABLE" },
+      fable: { left: "base", right: "fable", leftTitle: "Base", rightTitle: "FABLE" },
+    };
+
+    const state = { pair: "variants", showAll: false, wrap: false, expanded: new Set() };
+    const grid = document.getElementById("diff-grid");
+    const scroll = document.getElementById("diff-scroll");
+    const summary = document.getElementById("visible-summary");
+
+    function splitLines(source) {
+      return source.replace(/\n$/, "").split("\n");
+    }
+
+    function diffLines(leftSource, rightSource) {
+      const left = splitLines(leftSource);
+      const right = splitLines(rightSource);
+      const rows = Array.from({ length: left.length + 1 }, () => new Uint16Array(right.length + 1));
+
+      for (let i = left.length - 1; i >= 0; i--) {
+        for (let j = right.length - 1; j >= 0; j--) {
+          rows[i][j] = left[i] === right[j]
+            ? rows[i + 1][j + 1] + 1
+            : Math.max(rows[i + 1][j], rows[i][j + 1]);
+        }
+      }
+
+      const operations = [];
+      let i = 0;
+      let j = 0;
+      while (i < left.length && j < right.length) {
+        if (left[i] === right[j]) {
+          operations.push({ type: "equal", left: left[i], right: right[j], leftNo: i + 1, rightNo: j + 1 });
+          i++;
+          j++;
+        } else if (rows[i + 1][j] >= rows[i][j + 1]) {
+          operations.push({ type: "delete", left: left[i], leftNo: i + 1 });
+          i++;
+        } else {
+          operations.push({ type: "insert", right: right[j], rightNo: j + 1 });
+          j++;
+        }
+      }
+      while (i < left.length) operations.push({ type: "delete", left: left[i], leftNo: ++i });
+      while (j < right.length) operations.push({ type: "insert", right: right[j], rightNo: ++j });
+
+      const aligned = [];
+      for (let index = 0; index < operations.length;) {
+        if (operations[index].type === "equal") {
+          aligned.push(operations[index]);
+          index++;
+          continue;
+        }
+
+        const removed = [];
+        const added = [];
+        while (index < operations.length && operations[index].type !== "equal") {
+          if (operations[index].type === "delete") removed.push(operations[index]);
+          else added.push(operations[index]);
+          index++;
+        }
+
+        const blockSize = Math.max(removed.length, added.length);
+        for (let offset = 0; offset < blockSize; offset++) {
+          aligned.push({ type: "change", removed: removed[offset], added: added[offset] });
+        }
+      }
+      return aligned;
+    }
+
+    function cell(kind, lineNumber, text) {
+      const element = document.createElement("div");
+      element.className = `diff-cell ${kind}`;
+
+      const number = document.createElement("span");
+      number.className = "line-no";
+      number.textContent = lineNumber || "";
+
+      const sign = document.createElement("span");
+      sign.className = "sign";
+      sign.textContent = kind === "add" ? "+" : kind === "del" ? "−" : "";
+
+      const code = document.createElement("span");
+      code.className = "code";
+      code.textContent = text ?? "";
+
+      element.append(number, sign, code);
+      return element;
+    }
+
+    function diffRow(item) {
+      const row = document.createElement("div");
+      row.className = "diff-row";
+      if (item.type === "equal") {
+        row.append(cell("same", item.leftNo, item.left), cell("same", item.rightNo, item.right));
+      } else {
+        row.append(
+          item.removed ? cell("del", item.removed.leftNo, item.removed.left) : cell("empty", "", ""),
+          item.added ? cell("add", item.added.rightNo, item.added.right) : cell("empty", "", "")
+        );
+      }
+      return row;
+    }
+
+    function gapRow(hiddenRows, key) {
+      const row = document.createElement("div");
+      row.className = "gap";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = `Show ${hiddenRows.length} unchanged lines`;
+      button.addEventListener("click", () => {
+        state.expanded.add(key);
+        render();
+      });
+      row.append(button);
+      return row;
+    }
+
+    function render() {
+      const pair = pairs[state.pair];
+      const aligned = diffLines(sources[pair.left], sources[pair.right]);
+      const fragment = document.createDocumentFragment();
+      let added = 0;
+      let removed = 0;
+      let run = 0;
+
+      document.getElementById("left-title").innerHTML = `${pair.leftTitle} <small>${pair.left === "base" ? "lint-color/ast.ts" : "result"}</small>`;
+      document.getElementById("right-title").innerHTML = `${pair.rightTitle} <small>result</small>`;
+
+      for (let index = 0; index < aligned.length;) {
+        if (aligned[index].type !== "equal") {
+          const item = aligned[index];
+          if (item.added) added++;
+          if (item.removed) removed++;
+          fragment.append(diffRow(item));
+          index++;
+          continue;
+        }
+
+        const equalRows = [];
+        while (index < aligned.length && aligned[index].type === "equal") {
+          equalRows.push(aligned[index]);
+          index++;
+        }
+
+        const key = `${state.pair}-${run++}`;
+        if (state.showAll || state.expanded.has(key) || equalRows.length <= 8) {
+          equalRows.forEach(item => fragment.append(diffRow(item)));
+        } else {
+          equalRows.slice(0, 3).forEach(item => fragment.append(diffRow(item)));
+          fragment.append(gapRow(equalRows.slice(3, -3), key));
+          equalRows.slice(-3).forEach(item => fragment.append(diffRow(item)));
+        }
+      }
+
+      grid.replaceChildren(fragment);
+      grid.style.minWidth = state.wrap ? "0" : "1040px";
+      grid.querySelectorAll(".code").forEach(node => {
+        node.style.whiteSpace = state.wrap ? "pre-wrap" : "pre";
+        node.style.overflowWrap = state.wrap ? "anywhere" : "normal";
+      });
+      summary.textContent = `${removed} removed · ${added} added · ${aligned.length} aligned rows`;
+    }
+
+    document.querySelectorAll(".pair-button").forEach(button => {
+      button.addEventListener("click", () => {
+        state.pair = button.dataset.pair;
+        state.expanded.clear();
+        document.querySelectorAll(".pair-button").forEach(candidate => {
+          candidate.setAttribute("aria-pressed", String(candidate === button));
+        });
+        render();
+        scroll.scrollTop = 0;
+      });
+    });
+
+    document.getElementById("show-all").addEventListener("change", event => {
+      state.showAll = event.target.checked;
+      render();
+    });
+
+    document.getElementById("wrap-lines").addEventListener("change", event => {
+      state.wrap = event.target.checked;
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>

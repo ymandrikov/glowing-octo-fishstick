@@ -1,0 +1,274 @@
+Subject: [PATCH] SOL
+---
+Index: lint-color/ast.ts
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/lint-color/ast.ts b/lint-color/ast.ts
+--- a/lint-color/ast.ts	(revision 369b72be05ff6472dc168dd2809c620c7f428a93)
++++ b/lint-color/ast.ts	(date 1783675217792)
+@@ -1,14 +1,4 @@
+-// AST layer — the single boundary between raw TSX/TS source and every rule.
+-//
+-// One oxc parse per file replaces the hand-rolled JSX scanning that treated
+-// every quoted string as a className. Rules walk this tree instead of the text,
+-// so error messages, URLs, GraphQL/regex literals, and comments are never
+-// mistaken for class lists (root cause of the review's dominant FP class).
+-
+ import { parseSync } from "oxc-parser";
+-// AST-node types are re-exported by oxc-parser from @oxc-project/types; they are
+-// ESTree-shaped, so the `.type` discriminants below ("Literal", "Property", …)
+-// are the runtime string values, not the interface names.
+ import type {
+   Program,
+   Comment,
+@@ -30,72 +20,61 @@
+ 
+ export type StyleProp = { keyName: string; valueNode: Expression; node: ObjectProperty };
+ 
+-type Lang = "tsx" | "ts";
++type ParserLanguage = "tsx" | "ts";
+ 
+-// oxc nodes carry byte offsets (Span), not 1-based lines.
+-export function buildLineStarts(src: string): number[] {
++export function buildLineStarts(source: string): number[] {
+   const starts = [0];
+-  for (let k = 0; k < src.length; k++) {
+-    if (src[k] === "\n") starts.push(k + 1);
++  for (let index = 0; index < source.length; index++) {
++    if (source[index] === "\n") starts.push(index + 1);
+   }
+   return starts;
+ }
+ 
+ export function offsetToLine(lineStarts: number[], offset: number): number {
+-  let lo = 0;
+-  let hi = lineStarts.length - 1;
+-  while (lo < hi) {
+-    const mid = (lo + hi + 1) >> 1;
+-    if (lineStarts[mid] <= offset) lo = mid;
+-    else hi = mid - 1;
++  let lowerIndex = 0;
++  let upperIndex = lineStarts.length - 1;
++  while (lowerIndex < upperIndex) {
++    const middleIndex = (lowerIndex + upperIndex + 1) >> 1;
++    if (lineStarts[middleIndex] <= offset) lowerIndex = middleIndex;
++    else upperIndex = middleIndex - 1;
+   }
+-  return lo + 1;
++  return lowerIndex + 1;
+ }
+ 
+-// index.ts runs four rule passes over the same source; the LRU(1) cache makes
+-// that one parse per file.
+-let cache: { source: string; lang: Lang; ast: ParsedAst } | null = null;
++let parseCache: { source: string; language: ParserLanguage; ast: ParsedAst } | null = null;
+ 
+-// `.tsx` parses JSX; `.ts` must NOT — under tsx mode a legal plain-TS generic
+-// arrow (`const f = <T>(x) => x`) or angle-bracket cast (`<Foo>bar`) is a parse
+-// error, which would silently drop the rest of the file. `tsx` and `ts` are not
+-// a superset relationship, so pick by extension.
+-function langForFile(filePath: string): Lang {
++// TSX mode misparses valid TypeScript generic arrows and angle-bracket assertions.
++function parserLanguageForFile(filePath: string): ParserLanguage {
+   return /\.(tsx|jsx)$/.test(filePath) ? "tsx" : "ts";
+ }
+ 
+ export function parseSource(source: string, filePath = "file.tsx"): ParsedAst {
+-  const lang = langForFile(filePath);
+-  if (cache && cache.source === source && cache.lang === lang) return cache.ast;
+-  // On a syntax error oxc returns a best-effort recovered program; we walk what
+-  // parsed rather than surface `errors`. A genuinely unparseable file therefore
+-  // lints as clean — acceptable for v1 (the compiler flags real syntax errors),
+-  // and the lang-by-extension choice above keeps valid TS/TSX from tripping it.
+-  const { program, comments } = parseSync(filePath, source, { lang });
++  const language = parserLanguageForFile(filePath);
++  if (parseCache && parseCache.source === source && parseCache.language === language) {
++    return parseCache.ast;
++  }
++  // Syntax errors belong to the compiler; lint continues with oxc's recovered tree.
++  const { program, comments } = parseSync(filePath, source, { lang: language });
+   const ast: ParsedAst = { program, comments, lineStarts: buildLineStarts(source), ignored: null };
+-  cache = { source, lang, ast };
++  parseCache = { source, language, ast };
+   return ast;
+ }
+ 
+-// Skips the `parent` back-reference so the walk can't cycle.
+ export function walk(node: unknown, enter: (node: Node) => void): void {
+   if (!node || typeof node !== "object") return;
+   if (Array.isArray(node)) {
+     for (const child of node) walk(child, enter);
+     return;
+   }
+-  // The `typeof rec.type === "string"` guard is what makes the cast to Node sound.
+-  const rec = node as Record<string, unknown>;
+-  if (typeof rec.type === "string") enter(node as Node);
+-  for (const key in rec) {
++  const record = node as Record<string, unknown>;
++  if (typeof record.type === "string") enter(node as Node);
++  for (const key in record) {
+     if (key === "parent" || key === "type") continue;
+-    const value = rec[key];
++    const value = record[key];
+     if (value && typeof value === "object") walk(value, enter);
+   }
+ }
+ 
+-// Resolve a JSX element or attribute name node to its source string.
+-// `<div>` → "div", `<Dialog.Trigger>` → "Dialog.Trigger", `<svg:a>` → "svg:a".
+ export function jsxName(node: JSXElementName | null | undefined): string {
+   if (!node) return "";
+   switch (node.type) {
+@@ -110,110 +89,86 @@
+   }
+ }
+ 
+-// Only the exact marker word in a *comment* suppresses — a className like
+-// "color-lint-ignore-panel" no longer counts (fixes #18 superstring match).
+-// Suppression is scoped to the physical line the marker sits on, so a multi-line
+-// comment that merely mentions the word can't swallow other lines.
+ const IGNORE_MARKER = /color-lint-ignore(?![-\w])/;
+-const COMMENT_DELIM_LEN = 2; // `//` or `/*` — comment.value excludes the opener
++const COMMENT_OPENING_LENGTH = 2;
+ 
+ export function ignoredLines(ast: ParsedAst): Set<number> {
+   if (ast.ignored) return ast.ignored;
+   const lines = new Set<number>();
+-  for (const c of ast.comments) {
+-    const m = IGNORE_MARKER.exec(c.value);
+-    if (!m) continue;
+-    const markerOffset = c.start + COMMENT_DELIM_LEN + m.index;
++  for (const comment of ast.comments) {
++    const markerMatch = IGNORE_MARKER.exec(comment.value);
++    if (!markerMatch) continue;
++    const markerOffset = comment.start + COMMENT_OPENING_LENGTH + markerMatch.index;
+     lines.add(offsetToLine(ast.lineStarts, markerOffset));
+   }
+   ast.ignored = lines;
+   return lines;
+ }
+ 
+-// Static class strings carried by a className/class attribute value, each with
+-// the node whose offset locates it. v1 scans a plain string literal and a
+-// template literal's static quasis only. Class strings reached through a call
+-// (cn/clsx), a ternary, or a logical expression are a deliberate v1 non-goal —
+-// the general token pipeline stays "bare className/class" so no non-class string
+-// is ever scanned; those shapes return with the callee allowlist in v1.1.
+-// (no-component-color-override opts into the deep view below for cn()/clsx().)
+ export function classNameStatics(value: Node | null | undefined): ClassStatic[] {
+-  const out: ClassStatic[] = [];
+-  collectClassStatics(value, out);
+-  return out;
++  const statics: ClassStatic[] = [];
++  collectClassStatics(value, statics);
++  return statics;
+ }
+ 
+-function collectClassStatics(node: Node | null | undefined, out: ClassStatic[]): void {
++function collectClassStatics(node: Node | null | undefined, statics: ClassStatic[]): void {
+   if (!node) return;
+   if (node.type === "Literal" && typeof node.value === "string") {
+-    out.push({ text: node.value, node });
++    statics.push({ text: node.value, node });
+   } else if (node.type === "JSXExpressionContainer") {
+-    collectClassStatics(node.expression, out);
++    collectClassStatics(node.expression, statics);
+   } else if (node.type === "TemplateLiteral") {
+-    for (const q of node.quasis) {
+-      out.push({ text: q.value.cooked ?? q.value.raw ?? "", node: q });
++    for (const quasi of node.quasis) {
++      statics.push({ text: quasi.value.cooked ?? quasi.value.raw ?? "", node: quasi });
+     }
+   }
+ }
+ 
+-// Every static string reachable inside a className value, descending into call
+-// arguments (cn/clsx/…) and any nested expression. no-component-color-override
+-// needs this deep view to catch color classes wrapped in a helper; the general
+-// token pipeline deliberately stays shallow (v1 non-goal).
+-//
+-// KNOWN v1 LIMITATION: without a callee allowlist this also collects strings
+-// that are not class lists — an i18n/aria argument nested in the expression
+-// (e.g. `cn("flex", t("pick a text-red-500 tone"))`) is tokenized and can false-
+-// fire on a watched component. This matches the pre-AST behavior and is bounded
+-// by the v1.1 callee allowlist (cn/clsx/cva/tw``); see PRD §2 Non-Goals.
++// Scanning every nested string preserves legacy behavior but can inspect non-class arguments.
+ export function classNameStaticsDeep(value: unknown): ClassStatic[] {
+-  const out: ClassStatic[] = [];
+-  walk(value, (n) => {
+-    if (n.type === "Literal" && typeof n.value === "string") {
+-      out.push({ text: n.value, node: n });
+-    } else if (n.type === "TemplateElement") {
+-      out.push({ text: n.value.cooked ?? n.value.raw ?? "", node: n });
++  const statics: ClassStatic[] = [];
++  walk(value, (node) => {
++    if (node.type === "Literal" && typeof node.value === "string") {
++      statics.push({ text: node.value, node });
++    } else if (node.type === "TemplateElement") {
++      statics.push({ text: node.value.cooked ?? node.value.raw ?? "", node });
+     }
+   });
+-  return out;
++  return statics;
+ }
+ 
+-// Own properties of a style object literal, as { keyName, valueNode, node }.
+-// Detected via the object AST, not brace counting, so a `{` inside a string
+-// value can't desync anything (fixes #2 / M2). Returns [] for style={expr}.
+ export function styleObjectProps(attrValue: Node | null | undefined): StyleProp[] {
+-  const obj = objectExpressionOf(attrValue);
+-  if (!obj) return [];
++  const objectExpression = objectExpressionOf(attrValue);
++  if (!objectExpression) return [];
+   const props: StyleProp[] = [];
+-  for (const p of obj.properties) {
+-    if (p.type !== "Property") continue; // skip SpreadElement
+-    const keyName = propKeyName(p);
++  for (const property of objectExpression.properties) {
++    if (property.type !== "Property") continue;
++    const keyName = propKeyName(property);
+     if (keyName == null) continue;
+-    props.push({ keyName, valueNode: p.value, node: p });
++    props.push({ keyName, valueNode: property.value, node: property });
+   }
+   return props;
+ }
+ 
+ function objectExpressionOf(attrValue: Node | null | undefined): ObjectExpression | null {
+   if (!attrValue || attrValue.type !== "JSXExpressionContainer") return null;
+-  let e: Node = attrValue.expression;
++  let expression: Node = attrValue.expression;
+   while (
+-    e &&
+-    (e.type === "TSAsExpression" ||
+-      e.type === "TSSatisfiesExpression" ||
+-      e.type === "ParenthesizedExpression")
++    expression &&
++    (expression.type === "TSAsExpression" ||
++      expression.type === "TSSatisfiesExpression" ||
++      expression.type === "ParenthesizedExpression")
+   ) {
+-    e = e.expression;
++    expression = expression.expression;
+   }
+-  return e && e.type === "ObjectExpression" ? e : null;
++  return expression && expression.type === "ObjectExpression" ? expression : null;
+ }
+ 
+-function propKeyName(p: ObjectProperty): string | null {
+-  const k = p.key;
+-  if (!k) return null;
+-  // A computed key (`[dynamic]: …`) has no statically-known name.
+-  if (p.computed && k.type !== "Literal") return null;
+-  if (k.type === "Identifier") return k.name;
+-  if (k.type === "Literal") return typeof k.value === "string" ? k.value : null;
++function propKeyName(property: ObjectProperty): string | null {
++  const key = property.key;
++  if (!key) return null;
++  if (property.computed && key.type !== "Literal") return null;
++  if (key.type === "Identifier") return key.name;
++  if (key.type === "Literal") return typeof key.value === "string" ? key.value : null;
+   return null;
+ }
